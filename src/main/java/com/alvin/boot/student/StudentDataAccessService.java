@@ -1,0 +1,136 @@
+package com.alvin.boot.student;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public class StudentDataAccessService {
+
+    //to get from db
+    private final JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    public StudentDataAccessService(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    List<Student> selectAllStudents() {
+        //statement retrieve students from database
+        String sql = "" +
+                "SELECT " +
+                " student_id, " +
+                " first_name, " +
+                " last_name," +
+                " email," +
+                " gender " +
+                "FROM student";
+        //converting data from database to some kind of java object
+        return jdbcTemplate.query(sql, mapStudentFromDb());
+    }
+
+    int insertStudent(UUID studentId, Student student) {
+        String sql = "" +
+                "INSERT INTO student (" +
+                " student_id," +
+                " first_name," +
+                " last_name," +
+                " email," +
+                " gender)" +
+                "VALUES (?, ?, ?, ?, ?::gender)";
+        return jdbcTemplate.update(
+                sql,
+                studentId,
+                student.getFirstName(),
+                student.getLastName(),
+                student.getEmail(),
+                student.getGender().name().toUpperCase()
+        );
+
+    }
+
+    private RowMapper<Student> mapStudentFromDb() {
+        return (resultSet, i) -> {
+            //to transform the result that comes back from our query to a java object
+            //to grab the contents of each column we use result set
+            String studentIdStr = resultSet.getString("student_id");
+            //convert string into uuid
+            UUID studentId = UUID.fromString(studentIdStr);
+
+            String firstName = resultSet.getString("first_name");
+            String lastName = resultSet.getString("last_name");
+            String email = resultSet.getString("email");
+            String genderStr = resultSet.getString("gender").toUpperCase();
+            Student.Gender gender = Student.Gender.valueOf(genderStr);
+
+            return new Student(
+                    studentId,
+                    firstName,
+                    lastName,
+                    email,
+                    gender
+            );
+        };
+    }
+
+    @SuppressWarnings("ConstantConditions")
+      boolean isEmailTaken(String email) {
+        String sql = "" +
+                "SELECT EXISTS ( " +
+                " SELECT 1 " +
+                " FROM student " +
+                " WHERE email = ? " +
+                ")";
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                sql,
+                new Object[]{email},
+                (resultSet, i) -> resultSet.getBoolean(1)
+        ));
+    }
+
+     List<StudentCourse> selectAllStudentsCourses(UUID studentID) {
+        String sql ="" +
+                "SELECT " +
+                "student.student_id, " +
+                "course.course_id, " +
+                "course.name, " +
+                "course.description, " +
+                "course.department, " +
+                "course.teacher_name, " +
+                "student_course.start_date, " +
+                "student_course.end_date, " +
+                "student_course.grade " +
+                "FROM student " +
+                "JOIN student_course USING (student_id) " +
+                "JOIN course          USING (course_id) " +
+                "WHERE student.student_id = ?";
+
+        return jdbcTemplate.query(
+                sql,
+                new Object[]{studentID},
+                mapStudentCourseFromDb()
+        );
+    }
+
+    private RowMapper<StudentCourse> mapStudentCourseFromDb() {
+        return (resultSet, i) ->
+                new StudentCourse(
+                        UUID.fromString(resultSet.getString("student_id")),
+                        UUID.fromString(resultSet.getString("course_id")),
+                        resultSet.getString("name"),
+                        resultSet.getString("description"),
+                        resultSet.getString("department"),
+                        resultSet.getString("teacher_name"),
+                        resultSet.getDate("start_date").toLocalDate(),
+                        resultSet.getDate("end_date").toLocalDate(),
+                        Optional.ofNullable(resultSet.getString("grade"))
+                                .map(Integer::parseInt)
+                                .orElse(null)
+                );
+    }
+}
